@@ -22,7 +22,15 @@ class ScreenCaptureManager(private val context: Context) {
 
     fun setMediaProjection(resultCode: Int, data: android.content.Intent?) {
         val mgr = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        mediaProjection = mgr.getMediaProjection(resultCode, data ?: return)
+        val projection = mgr.getMediaProjection(resultCode, data ?: return)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            projection.registerCallback(object : MediaProjection.Callback() {
+                override fun onStop() {
+                    mediaProjection = null
+                }
+            }, Handler(Looper.getMainLooper()))
+        }
+        mediaProjection = projection
     }
 
     fun hasProjection(): Boolean = mediaProjection != null
