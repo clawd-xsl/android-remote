@@ -6,8 +6,10 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import android.view.accessibility.AccessibilityManager
 import androidx.activity.ComponentActivity
@@ -59,6 +61,7 @@ private fun MainScreen(context: Context) {
     val projectionGranted = remember { mutableStateOf(false) }
     val hasSavedProjection = remember { mutableStateOf(false) }
     val ipAddress = remember { mutableStateOf(getLocalIpAddress()) }
+    val batteryOptimized = remember { mutableStateOf(isBatteryOptimized(context)) }
 
     val projectionManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
 
@@ -162,18 +165,49 @@ private fun MainScreen(context: Context) {
             }
         }
 
+        // Battery optimization
+        if (batteryOptimized.value) {
+            Spacer(Modifier.height(12.dp))
+            Button(
+                onClick = {
+                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                        data = Uri.parse("package:${context.packageName}")
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(intent)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
+            ) {
+                Text("⚡ 关闭电池优化（保持后台运行）")
+            }
+        } else {
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "✅ 电池优化已关闭",
+                color = Color(0xFF4CAF50),
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+
         Spacer(Modifier.height(12.dp))
         Button(
             onClick = {
                 accessibilityEnabled.value = isAccessibilityServiceEnabled(context)
                 hasSavedProjection.value = RemoteAgentForegroundService.hasSavedProjection(context)
                 ipAddress.value = getLocalIpAddress()
+                batteryOptimized.value = isBatteryOptimized(context)
             },
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("刷新状态")
         }
     }
+}
+
+private fun isBatteryOptimized(context: Context): Boolean {
+    val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+    return !pm.isIgnoringBatteryOptimizations(context.packageName)
 }
 
 private fun isAccessibilityServiceEnabled(context: Context): Boolean {
