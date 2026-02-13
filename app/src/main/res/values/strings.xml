@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Android Remote</string>
+    <string name="notification_channel_name">Remote Agent</string>
+    <string name="notification_channel_desc">Android remote control agent is running</string>
+</resources>
