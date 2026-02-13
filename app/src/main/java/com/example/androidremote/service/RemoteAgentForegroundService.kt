@@ -32,7 +32,7 @@ class RemoteAgentForegroundService : Service() {
 
         if (httpServer == null) {
             httpServer = RemoteHttpServer(this, screenCaptureManager, 8080).also {
-                it.start(SOCKET_READ_TIMEOUT, false)
+                it.start(5000, false)
             }
         }
 
