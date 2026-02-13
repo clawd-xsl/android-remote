@@ -6,8 +6,10 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.Uri
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.androidremote.R
 import com.example.androidremote.api.RemoteHttpServer
@@ -31,8 +33,17 @@ class RemoteAgentForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, 0) ?: 0
         val data = intent?.getParcelableExtra<Intent>(EXTRA_RESULT_DATA)
+
         if (resultCode != 0 && data != null) {
+            // Save projection data for persistence across restarts
+            // NOTE: On Android 14+ (API 34), MediaProjection tokens are single-use and
+            // cannot be reused after the projection ends. This persistence only works
+            // reliably on Android 13 and below.
+            saveProjectionData(resultCode, data)
             screenCaptureManager.setMediaProjection(resultCode, data)
+        } else if (!screenCaptureManager.hasProjection()) {
+            // Try to restore from saved data on service restart
+            tryRestoreProjection()
         }
 
         if (httpServer == null) {
@@ -49,6 +60,46 @@ class RemoteAgentForegroundService : Service() {
             startForeground(1001, notification)
         }
         return START_STICKY
+    }
+
+    /**
+     * Save the MediaProjection result code and Intent data to SharedPreferences.
+     * The Intent is serialized as a URI string for safe storage.
+     */
+    private fun saveProjectionData(resultCode: Int, data: Intent) {
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        prefs.edit()
+            .putInt(KEY_RESULT_CODE, resultCode)
+            .putString(KEY_RESULT_DATA_URI, data.toUri(Intent.URI_INTENT_SCHEME))
+            .apply()
+        Log.d(TAG, "Saved projection data (resultCode=$resultCode)")
+    }
+
+    /**
+     * Attempt to restore a MediaProjection from previously saved data.
+     * This will only work on Android < 14 (API 34) where tokens can be reused.
+     */
+    private fun tryRestoreProjection() {
+        // On Android 14+, MediaProjection tokens are single-use; skip restore attempt
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            Log.d(TAG, "Skipping projection restore: Android 14+ tokens are single-use")
+            return
+        }
+
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val savedResultCode = prefs.getInt(KEY_RESULT_CODE, 0)
+        val savedDataUri = prefs.getString(KEY_RESULT_DATA_URI, null)
+
+        if (savedResultCode != 0 && savedDataUri != null) {
+            try {
+                val restoredData = Intent.parseUri(savedDataUri, Intent.URI_INTENT_SCHEME)
+                screenCaptureManager.setMediaProjection(savedResultCode, restoredData)
+                Log.d(TAG, "Restored projection from saved data")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to restore projection", e)
+                clearSavedProjectionData()
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -83,7 +134,11 @@ class RemoteAgentForegroundService : Service() {
     }
 
     companion object {
+        private const val TAG = "RemoteAgentService"
         private const val CHANNEL_ID = "remote_agent_channel"
+        private const val PREFS_NAME = "projection_prefs"
+        private const val KEY_RESULT_CODE = "projection_result_code"
+        private const val KEY_RESULT_DATA_URI = "projection_result_data_uri"
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_RESULT_DATA = "result_data"
 
@@ -94,5 +149,29 @@ class RemoteAgentForegroundService : Service() {
             }
             service.startForegroundService(intent)
         }
+
+        /**
+         * Check if saved projection data exists in SharedPreferences.
+         */
+        fun hasSavedProjection(context: android.content.Context): Boolean {
+            val prefs = context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            return prefs.getInt(KEY_RESULT_CODE, 0) != 0 &&
+                    prefs.getString(KEY_RESULT_DATA_URI, null) != null
+        }
+
+        /**
+         * Clear saved projection data (e.g., when user explicitly revokes).
+         */
+        fun clearSavedProjectionData(context: android.content.Context) {
+            context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .remove(KEY_RESULT_CODE)
+                .remove(KEY_RESULT_DATA_URI)
+                .apply()
+        }
+    }
+
+    private fun clearSavedProjectionData() {
+        Companion.clearSavedProjectionData(this)
     }
 }
