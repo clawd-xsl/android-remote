@@ -41,10 +41,8 @@ class RemoteAgentForegroundService : Service() {
         val data = intent?.getParcelableExtra<Intent>(EXTRA_RESULT_DATA)
 
         if (resultCode != 0 && data != null) {
-            // Save projection data for persistence across restarts
-            // NOTE: On Android 14+ (API 34), MediaProjection tokens are single-use and
-            // cannot be reused after the projection ends. This persistence only works
-            // reliably on Android 13 and below.
+            // Fresh projection data from user grant — always apply (even if we already have one)
+            Log.d(TAG, "Received fresh projection data, applying (hasExisting=${screenCaptureManager.hasProjection()})")
             saveProjectionData(resultCode, data)
             screenCaptureManager.setMediaProjection(resultCode, data)
         } else if (!screenCaptureManager.hasProjection()) {

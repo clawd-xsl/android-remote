@@ -27,7 +27,7 @@ data class SwipeRequest(
     val durationMs: Long = 300
 )
 data class InputRequest(val text: String)
-data class KeyRequest(val keyCode: String)
+data class KeyRequest(val keyCode: String? = null, val key: String? = null)
 data class LaunchRequest(val packageName: String)
 data class NotificationRequest(val title: String, val body: String)
 

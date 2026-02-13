@@ -48,8 +48,13 @@ class RemoteHttpServer(
     }
 
     private fun handleScreen(): Response {
+        if (!screenCaptureManager.hasProjection()) {
+            val reason = screenCaptureManager.projectionLostReason
+            val msg = if (reason != null) "MediaProjection lost: $reason" else "MediaProjection not granted"
+            return jsonResponse(Response.Status.BAD_REQUEST, mapOf("error" to msg))
+        }
         val bytes = screenCaptureManager.capturePng()
-            ?: return jsonResponse(Response.Status.BAD_REQUEST, mapOf("error" to "MediaProjection not granted"))
+            ?: return jsonResponse(Response.Status.INTERNAL_ERROR, mapOf("error" to "Screen capture failed (projection exists but capture returned null)"))
         return newFixedLengthResponse(Response.Status.OK, "image/png", bytes.inputStream(), bytes.size.toLong())
     }
 
@@ -95,9 +100,11 @@ class RemoteHttpServer(
     private fun handleKey(session: IHTTPSession): Response {
         if (session.method != Method.POST) return methodNotAllowed()
         val req = parseBody(session, KeyRequest::class.java)
+        val keyCode = req.keyCode ?: req.key
+            ?: return jsonResponse(Response.Status.BAD_REQUEST, mapOf("error" to "Missing 'keyCode' or 'key' parameter"))
         val svc = RemoteAccessibilityService.instance
             ?: return jsonResponse(Response.Status.BAD_REQUEST, mapOf("error" to "AccessibilityService not enabled"))
-        val ok = svc.performGlobalKey(req.keyCode)
+        val ok = svc.performGlobalKey(keyCode)
         return jsonResponse(Response.Status.OK, mapOf("success" to ok))
     }
 

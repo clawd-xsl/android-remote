@@ -29,29 +29,60 @@ class ScreenCaptureManager(private val context: Context) {
      */
     var onProjectionLost: (() -> Unit)? = null
 
+    /**
+     * Reason why projection is unavailable, for better error reporting.
+     */
+    var projectionLostReason: String? = null
+        private set
+
     fun setMediaProjection(resultCode: Int, data: android.content.Intent?) {
-        val mgr = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        val projection = mgr.getMediaProjection(resultCode, data ?: return)
+        Log.d(TAG, "setMediaProjection called: resultCode=$resultCode, data=${data != null}")
+        if (data == null) {
+            Log.e(TAG, "setMediaProjection: data is null, aborting")
+            return
+        }
 
-        // Save for potential restore
-        lastResultCode = resultCode
-        lastResultData = data
-
-        // Register callback to detect when projection dies (e.g., screen lock on some devices)
-        projection.registerCallback(object : MediaProjection.Callback() {
-            override fun onStop() {
-                Log.w(TAG, "MediaProjection stopped unexpectedly")
-                mediaProjection = null
-                // Attempt to restore from saved data on Android < 14
-                // On Android 14+ (API 34), tokens are single-use and cannot be reused
-                if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                    tryRestoreFromLastData()
-                }
-                onProjectionLost?.invoke()
+        // Clean up existing projection before creating a new one
+        val oldProjection = mediaProjection
+        if (oldProjection != null) {
+            Log.d(TAG, "Stopping existing MediaProjection before creating new one")
+            try {
+                oldProjection.stop()
+            } catch (e: Exception) {
+                Log.w(TAG, "Error stopping old projection (may already be stopped)", e)
             }
-        }, Handler(Looper.getMainLooper()))
+            mediaProjection = null
+        }
 
-        mediaProjection = projection
+        val mgr = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        try {
+            val projection = mgr.getMediaProjection(resultCode, data)
+            Log.d(TAG, "getMediaProjection returned: $projection")
+
+            // Save for potential restore
+            lastResultCode = resultCode
+            lastResultData = data
+
+            // Register callback to detect when projection dies
+            projection.registerCallback(object : MediaProjection.Callback() {
+                override fun onStop() {
+                    Log.w(TAG, "MediaProjection stopped unexpectedly")
+                    mediaProjection = null
+                    projectionLostReason = "MediaProjection stopped (revoked or screen lock)"
+                    if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                        tryRestoreFromLastData()
+                    }
+                    onProjectionLost?.invoke()
+                }
+            }, Handler(Looper.getMainLooper()))
+
+            mediaProjection = projection
+            projectionLostReason = null
+            Log.d(TAG, "MediaProjection set successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to create MediaProjection", e)
+            projectionLostReason = "Failed to create: ${e.message}"
+        }
     }
 
     /**
