@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
@@ -20,7 +21,11 @@ class RemoteAgentForegroundService : Service() {
         super.onCreate()
         screenCaptureManager = ScreenCaptureManager(this)
         createNotificationChannel()
-        startForeground(1001, buildNotification("Starting remote agent..."))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(1001, buildNotification("Starting remote agent..."), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+        } else {
+            startForeground(1001, buildNotification("Starting remote agent..."))
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -37,7 +42,12 @@ class RemoteAgentForegroundService : Service() {
         }
 
         val status = if (screenCaptureManager.hasProjection()) "Server: 8080 (capture ready)" else "Server: 8080 (waiting capture permission)"
-        startForeground(1001, buildNotification(status))
+        val notification = buildNotification(status)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(1001, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+        } else {
+            startForeground(1001, notification)
+        }
         return START_STICKY
     }
 
